@@ -59,6 +59,15 @@ export const fetchWorkspaceMembers = (workspaceId) =>
 export const fetchEvents = (range = 'week') => safeGet('/events', { range });
 export const fetchTasks = (status = 'all') => safeGet('/tasks', { status });
 export const fetchRecentDocs = (limit = 5) => safeGet('/pages', { limit });
+export const createDoc = async (title, type) => {
+  try {
+    const r = await client.post('/pages', { title, type });
+    return r.data || r;
+  } catch (e) {
+    console.warn('[omnidesk] POST /pages failed:', e.message);
+    return null;
+  }
+};
 
 // --- Shape normalizers (backend may differ slightly; we coerce to UI shape) ---
 const COLORS_BY_INDEX = ['bg-blue-500', 'bg-purple-500', 'bg-pink-500', 'bg-orange-500', 'bg-emerald-500', 'bg-indigo-500'];

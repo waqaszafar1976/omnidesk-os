@@ -18,7 +18,7 @@ import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import {
-  login as apiLogin, logout as apiLogout, getToken, BASE_URL,
+  login as apiLogin, logout as apiLogout, getToken, BASE_URL, createDoc,
   fetchKpis, fetchUsageTrend, fetchWorkspaceDistribution, fetchTopWorkspaces,
   fetchRecentActivity, fetchWorkspaceMembers, fetchEvents, fetchTasks, fetchRecentDocs,
   normalizeKpisAdmin, normalizeKpisUser, normalizeActivity, normalizeMembers,
@@ -138,13 +138,14 @@ const SectionHeader = ({ title, subtitle, action }) => (
   </div>
 );
 
-const KPICard = ({ kpi }) => {
+const KPICard = ({ kpi, onClick }) => {
   const Icon = kpi.icon;
   const isUp = kpi.trend === 'up';
   return (
     <div
       data-testid={`kpi-card-${kpi.id}`}
-      className="relative overflow-hidden bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+      onClick={onClick}
+      className="relative overflow-hidden bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
     >
       <div className={`absolute -top-8 -right-8 w-32 h-32 rounded-full bg-gradient-to-br ${kpi.color} opacity-10`} />
       <div className="relative">
@@ -256,7 +257,7 @@ const Sidebar = ({ activeView, setActiveView, onClose }) => {
    TOP BAR
    ========================================================================= */
 
-const TopBar = ({ onBack, onLogout, authed }) => (
+const TopBar = ({ onBack, onLogout, authed, onNewClick }) => (
   <div className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
     <div className="flex items-center gap-4 flex-1 max-w-2xl">
       <div className="relative flex-1">
@@ -273,6 +274,7 @@ const TopBar = ({ onBack, onLogout, authed }) => (
     <div className="flex items-center gap-2">
       <Button
         data-testid="dashboard-new-button"
+        onClick={onNewClick}
         className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md"
       >
         <Plus className="w-4 h-4 mr-1.5" /> New
@@ -306,7 +308,7 @@ const TopBar = ({ onBack, onLogout, authed }) => (
    ADMIN VIEW
    ========================================================================= */
 
-const AdminView = ({ data }) => {
+const AdminView = ({ data, onKpiClick }) => {
   const arr = (v, fb) => (Array.isArray(v) && v.length > 0 ? v : fb);
   const kpis = arr(data?.kpis, KPI_CARDS_ADMIN);
   const usageTrend = arr(data?.usageTrend, USAGE_TREND);
@@ -317,7 +319,7 @@ const AdminView = ({ data }) => {
   <div className="space-y-6">
     {/* KPI ROW */}
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {kpis.map((kpi) => <KPICard key={kpi.id} kpi={kpi} />)}
+      {kpis.map((kpi) => <KPICard key={kpi.id} kpi={kpi} onClick={() => onKpiClick(kpi.id)} />)}
     </div>
 
     {/* CHARTS ROW */}
@@ -502,7 +504,7 @@ const AdminView = ({ data }) => {
    USER VIEW
    ========================================================================= */
 
-const UserView = ({ data, user }) => {
+const UserView = ({ data, user, onKpiClick }) => {
   const arr = (v, fb) => (Array.isArray(v) && v.length > 0 ? v : fb);
   const kpis = arr(data?.kpis, KPI_CARDS_USER);
   const recentDocs = arr(data?.recentDocs, RECENT_DOCS);
@@ -535,7 +537,7 @@ const UserView = ({ data, user }) => {
 
     {/* KPIs */}
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {kpis.map((kpi) => <KPICard key={kpi.id} kpi={kpi} />)}
+      {kpis.map((kpi) => <KPICard key={kpi.id} kpi={kpi} onClick={() => onKpiClick(kpi.id)} />)}
     </div>
 
     {/* MIDDLE GRID */}
@@ -610,7 +612,8 @@ const UserView = ({ data, user }) => {
     {/* BOTTOM GRID */}
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Tasks */}
-      <SectionCard className="lg:col-span-2" testId="tasks-card">
+      <div id="tasks-card-container" className="lg:col-span-2">
+        <SectionCard testId="tasks-card">
         <SectionHeader
           title="My Tasks"
           subtitle="In-progress and todo items"
@@ -650,6 +653,7 @@ const UserView = ({ data, user }) => {
           })}
         </div>
       </SectionCard>
+    </div>
 
       {/* Team */}
       <SectionCard testId="team-members-card">
@@ -1026,6 +1030,126 @@ const DashboardPage = () => {
   const [userData, setUserData] = useState({});
   const [apiError, setApiError] = useState('');
 
+  // Interactive UI Modal states
+  const [selectedInfoModal, setSelectedInfoModal] = useState(null);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newType, setNewType] = useState('document');
+  const [newTaskPriority, setNewTaskPriority] = useState('medium');
+  const [newLoading, setNewLoading] = useState(false);
+  const [newError, setNewError] = useState('');
+
+  const handleKpiClick = (id) => {
+    switch (id) {
+      case 'k1': // Active Users (Admin)
+        setActiveView('team');
+        break;
+      case 'k2': // Total Documents (Admin)
+      case 'k3': // Smart Tables (Admin)
+      case 'u1': // My Documents (User)
+        setActiveView('documents');
+        break;
+      case 'k4': // Storage Used (Admin)
+        setSelectedInfoModal({
+          title: 'Storage Capacity Details',
+          content: 'You are currently using 847 GB of your 1 TB enterprise storage plan (84.7% capacity). Active document indexes account for 312 GB, historical database snapshots account for 415 GB, and files/attachments account for 120 GB.',
+          details: [
+            { label: 'Document Files', value: '312 GB' },
+            { label: 'Database Logs', value: '415 GB' },
+            { label: 'Uploaded Media', value: '120 GB' },
+            { label: 'Remaining Space', value: '177 GB' }
+          ]
+        });
+        break;
+      case 'u2': // Open Tasks (User)
+        // Switch to overview tab if not there
+        setActiveView('overview');
+        // Scroll to tasks card
+        setTimeout(() => {
+          const tasksCard = document.getElementById('tasks-card-container');
+          if (tasksCard) {
+            tasksCard.scrollIntoView({ behavior: 'smooth' });
+          } else {
+            setActiveView('calendar');
+          }
+        }, 100);
+        break;
+      case 'u3': // Team Activity (User)
+        setActiveView('activity');
+        break;
+      case 'u4': // AI Credits (User)
+        setSelectedInfoModal({
+          title: 'AI Token Credits Breakdown',
+          content: 'Your account has 8.4K AI Credits remaining out of 10.0K monthly tokens allocated. These credits are consumed when generating summaries, formulas, or utilizing autonomous code edits.',
+          details: [
+            { label: 'Monthly Quota', value: '10.0K credits' },
+            { label: 'Consumed this Month', value: '1.6K credits' },
+            { label: 'Remaining Tokens', value: '8.4K credits' },
+            { label: 'Auto-Renewal Date', value: 'July 1, 2026' }
+          ]
+        });
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleCreateResource = async (e) => {
+    e.preventDefault();
+    if (!newTitle.trim()) {
+      setNewError('Please enter a title');
+      return;
+    }
+    setNewLoading(true);
+    setNewError('');
+
+    try {
+      if (newType === 'document' || newType === 'table' || newType === 'canvas') {
+        const result = await createDoc(newTitle, newType);
+        if (result && (result.success || result.id)) {
+          // Success! Reload data to refresh document list
+          await loadData();
+          setShowNewModal(false);
+          setNewTitle('');
+        } else {
+          throw new Error('Failed to create page on the backend');
+        }
+      } else if (newType === 'task') {
+        const newTask = {
+          id: 'temp-task-' + Date.now(),
+          title: newTitle,
+          priority: newTaskPriority,
+          status: 'todo',
+          progress: 0
+        };
+        setUserData(prev => ({
+          ...prev,
+          tasks: [newTask, ...(prev.tasks || [])]
+        }));
+        setShowNewModal(false);
+        setNewTitle('');
+      } else if (newType === 'event') {
+        const newEvent = {
+          id: 'temp-event-' + Date.now(),
+          title: newTitle,
+          time: 'Today, ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          priority: newTaskPriority,
+          color: newTaskPriority === 'high' ? 'bg-red-100 text-red-700 border-red-200' : newTaskPriority === 'medium' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-blue-100 text-blue-700 border-blue-200'
+        };
+        setUserData(prev => ({
+          ...prev,
+          events: [newEvent, ...(prev.events || [])]
+        }));
+        setShowNewModal(false);
+        setNewTitle('');
+      }
+    } catch (err) {
+      setNewError(err.message || 'Error creating resource');
+    } finally {
+      setNewLoading(false);
+    }
+  };
+
   const loadData = useCallback(async () => {
     setLoadingData(true);
     setApiError('');
@@ -1090,7 +1214,7 @@ const DashboardPage = () => {
       <Sidebar activeView={activeView} setActiveView={setActiveView} onClose={() => navigate('/workspace')} />
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <TopBar onBack={() => navigate('/workspace')} onLogout={handleLogout} authed={authed} />
+        <TopBar onBack={() => navigate('/workspace')} onLogout={handleLogout} authed={authed} onNewClick={() => setShowNewModal(true)} />
 
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 max-w-[1600px] mx-auto">
@@ -1134,7 +1258,11 @@ const DashboardPage = () => {
                   </div>
                 </div>
 
-                {activeTab === 'admin' ? <AdminView data={adminData} /> : <UserView data={userData} user={user} />}
+                {activeTab === 'admin' ? (
+                  <AdminView data={adminData} onKpiClick={handleKpiClick} />
+                ) : (
+                  <UserView data={userData} user={user} onKpiClick={handleKpiClick} />
+                )}
               </>
             )}
 
@@ -1150,6 +1278,134 @@ const DashboardPage = () => {
           </div>
         </div>
       </main>
+
+      {/* Selected Info / Capacity details Modal */}
+      {selectedInfoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white flex items-center justify-between">
+              <h3 className="font-bold text-lg">{selectedInfoModal.title}</h3>
+              <button onClick={() => setSelectedInfoModal(null)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">{selectedInfoModal.content}</p>
+              {selectedInfoModal.details && (
+                <div className="border border-slate-150 rounded-xl overflow-hidden text-sm">
+                  {selectedInfoModal.details.map((d, idx) => (
+                    <div key={idx} className={`flex justify-between p-3 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'} border-b border-slate-100 last:border-b-0`}>
+                      <span className="font-medium text-slate-500">{d.label}</span>
+                      <span className="font-bold text-slate-800">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button onClick={() => setSelectedInfoModal(null)} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold mt-4">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Resource Modal */}
+      {showNewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white flex items-center justify-between">
+              <h3 className="font-bold text-lg flex items-center gap-1.5"><Plus className="w-5 h-5" /> Create New Resource</h3>
+              <button onClick={() => { setShowNewModal(false); setNewTitle(''); setNewError(''); }} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateResource} className="p-6 space-y-4">
+              <div>
+                <label className="text-xs uppercase tracking-widest font-semibold text-slate-500 mb-1.5 block">Resource Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { val: 'document', label: 'Document' },
+                    { val: 'table', label: 'Smart Table' },
+                    { val: 'canvas', label: 'Canvas' },
+                    { val: 'task', label: 'Task' },
+                    { val: 'event', label: 'Event' }
+                  ].map((t) => (
+                    <button
+                      key={t.val}
+                      type="button"
+                      onClick={() => setNewType(t.val)}
+                      className={`p-2.5 text-xs rounded-xl border font-semibold transition-all ${
+                        newType === t.val
+                          ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-widest font-semibold text-slate-500 mb-1.5 block">Title / Name</label>
+                <Input
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="e.g. Q4 Strategy Review"
+                  required
+                  className="border-slate-200 focus-visible:ring-indigo-500"
+                />
+              </div>
+
+              {(newType === 'task' || newType === 'event') && (
+                <div>
+                  <label className="text-xs uppercase tracking-widest font-semibold text-slate-500 mb-1.5 block">Priority</label>
+                  <div className="flex gap-2">
+                    {['low', 'medium', 'high'].map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setNewTaskPriority(p)}
+                        className={`flex-1 p-2 text-xs rounded-lg border font-semibold capitalize transition-all ${
+                          newTaskPriority === p
+                            ? p === 'high' ? 'border-rose-500 bg-rose-50 text-rose-700' : p === 'medium' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newError && (
+                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
+                  {newError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => { setShowNewModal(false); setNewTitle(''); setNewError(''); }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={newLoading}
+                  className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md"
+                >
+                  {newLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
