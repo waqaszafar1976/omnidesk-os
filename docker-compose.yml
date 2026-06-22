@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # 1. Primary Database Service
+  omnidesk-db:
+    image: postgres:15-alpine
+    container_name: omnidesk_postgres
+    environment:
+      POSTGRES_USER: omni_admin
+      POSTGRES_PASSWORD: OmniSecurePassword2026
+      POSTGRES_DB: omnidesk_core
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - omnidesk-network
+    restart: always
+
+  # 2. Redis Cache & Real-time Pub/Sub Message Broker
+  omnidesk-redis:
+    image: redis:7-alpine
+    container_name: omnidesk_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - omnidesk-network
+    restart: always
+
+  # 3. Node.js API & WebSocket Server
+  omnidesk-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omnidesk_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - DATABASE_URL=postgresql://omni_admin:OmniSecurePassword2026@omnidesk-db:5432/omnidesk_core
+      - REDIS_URL=redis://omnidesk-redis:6379
+      - JWT_SECRET=OmniSuperSecretKey2026
+    depends_on:
+      - omnidesk-db
+      - omnidesk-redis
+    networks:
+      - omnidesk-network
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+
+  # 4. Next.js Frontend (Omnidesk OS UI)
+  omnidesk-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: omnidesk_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000/api/v1
+      - NEXT_PUBLIC_WS_SERVER_URL=ws://localhost:5000/ws
+    depends_on:
+      - omnidesk-backend
+    networks:
+      - omnidesk-network
+    volumes:
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
+
+volumes:
+  postgres_data:
+
+networks:
+  omnidesk-network:
+    driver: bridge
