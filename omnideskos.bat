@@ -37,7 +37,7 @@ goto CLEAR_PORTS
 
 :LAUNCH_FRONTEND_DASHBOARD
 if not exist "omnidesk-dashboard" (
-    echo [ERROR] Custom Dashboard folder (omnidesk-dashboard) not found!
+    echo [ERROR] Custom Dashboard folder omnidesk-dashboard not found!
     pause
     exit /b
 )
