@@ -48,14 +48,14 @@ goto CLEAR_PORTS
 echo [1/5] Scanning and recovering network ports 3000 ^& 5000...
 for /f "tokens=5" %%p in ('netstat -aon ^| findstr /r /c:":3000[^0-9]" ^| findstr LISTENING') do (
     if not "%%p"=="" (
-        echo Killing process %%p currently listening on Port 3000 ^(Frontend^)...
+        echo Killing process %%p currently listening on Port 3000...
         taskkill /F /PID %%p >nul 2>&1
     )
 )
 
 for /f "tokens=5" %%p in ('netstat -aon ^| findstr /r /c:":5000[^0-9]" ^| findstr LISTENING') do (
     if not "%%p"=="" (
-        echo Killing process %%p currently listening on Port 5000 ^(Backend API^)...
+        echo Killing process %%p currently listening on Port 5000...
         taskkill /F /PID %%p >nul 2>&1
     )
 )
@@ -151,24 +151,29 @@ if not exist "frontend\.next\BUILD_ID" (
 goto RUN_APPS
 
 :BUILD_FRONTEND_DASHBOARD
-echo [4/5] Skipping Next.js compilation (Using custom dashboard)...
+echo [4/5] Skipping Next.js compilation...
 goto RUN_APPS
 
 :: 6. Launch Services
 :RUN_APPS
-echo [5/5] Initializing Backend API Server (Port 5000)...
+echo [5/5] Initializing Backend API Server...
 start "Omnidesk OS Backend API" /D "backend" cmd /k npm run start
 
-:: 7. Launch Selected Frontend Client
-if "%choice%"=="1" (
-    echo [6/5] Initializing Frontend Next.js Client (Port 3000)...
-    start "Omnidesk OS Frontend UI" /D "frontend" cmd /k npm run start
-) else (
-    echo [6/5] Initializing Custom Dashboard (Port 3000)...
-    start "Omnidesk OS Custom Dashboard" /D "omnidesk-dashboard" cmd /k "set PORT=3000 && npm run start"
-)
+if "%choice%"=="1" goto RUN_FRONTEND_NEXT
+goto RUN_FRONTEND_DASHBOARD
+
+:RUN_FRONTEND_NEXT
+echo [6/5] Initializing Frontend Next.js Client on Port 3000...
+start "Omnidesk OS Frontend UI" /D "frontend" cmd /k npm run start
+goto RUN_BROWSER
+
+:RUN_FRONTEND_DASHBOARD
+echo [6/5] Initializing Custom Dashboard on Port 3000...
+start "Omnidesk OS Custom Dashboard" /D "omnidesk-dashboard" cmd /k "set PORT=3000 && npm run start"
+goto RUN_BROWSER
 
 :: 8. Open browser automatically once booted
+:RUN_BROWSER
 echo Opening browser dashboard at http://localhost:3000...
 timeout /t 5 /nobreak >nul
 start http://localhost:3000
