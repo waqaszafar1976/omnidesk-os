@@ -19,21 +19,32 @@ echo.
 set /p choice="Enter choice (1 or 2, default is 2): "
 if "%choice%"=="" set choice=2
 
-if "%choice%"=="1" (
-    if not exist "frontend" (
-        echo [ERROR] Frontend folder not found!
-        pause
-        exit /b
-    )
-) else (
-    if not exist "omnidesk-dashboard" (
-        echo [ERROR] Custom Dashboard folder (omnidesk-dashboard) not found!
-        pause
-        exit /b
-    )
+if "%choice%"=="1" goto LAUNCH_FRONTEND_NEXT
+if "%choice%"=="2" goto LAUNCH_FRONTEND_DASHBOARD
+
+:: Fallback if invalid choice
+echo Invalid choice, defaulting to Custom Dashboard.
+set choice=2
+goto LAUNCH_FRONTEND_DASHBOARD
+
+:LAUNCH_FRONTEND_NEXT
+if not exist "frontend" (
+    echo [ERROR] Frontend folder not found!
+    pause
+    exit /b
 )
+goto CLEAR_PORTS
+
+:LAUNCH_FRONTEND_DASHBOARD
+if not exist "omnidesk-dashboard" (
+    echo [ERROR] Custom Dashboard folder (omnidesk-dashboard) not found!
+    pause
+    exit /b
+)
+goto CLEAR_PORTS
 
 :: 2. Terminate any active process holding port 3000 or 5000
+:CLEAR_PORTS
 echo [1/5] Scanning and recovering network ports 3000 ^& 5000...
 for /f "tokens=5" %%p in ('netstat -aon ^| findstr /r /c:":3000[^0-9]" ^| findstr LISTENING') do (
     if not "%%p"=="" (
@@ -49,8 +60,10 @@ for /f "tokens=5" %%p in ('netstat -aon ^| findstr /r /c:":5000[^0-9]" ^| findst
     )
 )
 echo Ports successfully cleared.
+goto CHECK_DEPS
 
 :: 3. Verify and Install Dependencies
+:CHECK_DEPS
 echo [2/5] Checking node_modules dependencies...
 if not exist "backend\node_modules" (
     echo Backend dependencies not found. Installing backend packages...
@@ -65,35 +78,41 @@ if not exist "backend\node_modules" (
     cd ..
 )
 
-if "%choice%"=="1" (
-    if not exist "frontend\node_modules" (
-        echo Frontend dependencies not found. Installing frontend packages...
-        cd frontend
-        cmd /c npm install
-        if errorlevel 1 (
-            echo [ERROR] Frontend npm install failed!
-            cd ..
-            pause
-            exit /b
-        )
+if "%choice%"=="1" goto DEPS_NEXT
+goto DEPS_DASHBOARD
+
+:DEPS_NEXT
+if not exist "frontend\node_modules" (
+    echo Frontend dependencies not found. Installing frontend packages...
+    cd frontend
+    cmd /c npm install
+    if errorlevel 1 (
+        echo [ERROR] Frontend npm install failed!
         cd ..
+        pause
+        exit /b
     )
-) else (
-    if not exist "omnidesk-dashboard\node_modules" (
-        echo Custom Dashboard dependencies not found. Installing dashboard packages...
-        cd omnidesk-dashboard
-        cmd /c npm install
-        if errorlevel 1 (
-            echo [ERROR] Custom Dashboard npm install failed!
-            cd ..
-            pause
-            exit /b
-        )
-        cd ..
-    )
+    cd ..
 )
+goto BUILD_BACKEND
+
+:DEPS_DASHBOARD
+if not exist "omnidesk-dashboard\node_modules" (
+    echo Custom Dashboard dependencies not found. Installing dashboard packages...
+    cd omnidesk-dashboard
+    cmd /c npm install
+    if errorlevel 1 (
+        echo [ERROR] Custom Dashboard npm install failed!
+        cd ..
+        pause
+        exit /b
+    )
+    cd ..
+)
+goto BUILD_BACKEND
 
 :: 4. Build backend if needed
+:BUILD_BACKEND
 echo [3/5] Verifying Backend compiled assets...
 if not exist "backend\dist\server.js" (
     echo Backend assets not found. Compiling backend...
@@ -108,29 +127,35 @@ if not exist "backend\dist\server.js" (
     cd ..
 )
 
-:: 5. Build frontend if choice is 1
-if "%choice%"=="1" (
-    echo [4/5] Verifying Frontend compiled assets...
-    if not exist "frontend\.next\BUILD_ID" (
-        echo Frontend production build not found. Compiling optimized production build...
-        cd frontend
-        echo Compiling Tailwind CSS stylesheet...
-        cmd /c npx tailwindcss -i src/styles/globals.css -o src/styles/tailwind-compiled.css
-        echo Building Next.js production bundle...
-        cmd /c npm run build
-        if errorlevel 1 (
-            echo [ERROR] Frontend compilation failed!
-            cd ..
-            pause
-            exit /b
-        )
-        cd ..
-    )
-) else (
-    echo [4/5] Skipping Next.js compilation (Using custom dashboard development mode)...
-)
+if "%choice%"=="1" goto BUILD_FRONTEND_NEXT
+goto BUILD_FRONTEND_DASHBOARD
 
-:: 6. Launch Backend API Server
+:: 5. Build frontend if choice is 1
+:BUILD_FRONTEND_NEXT
+echo [4/5] Verifying Frontend compiled assets...
+if not exist "frontend\.next\BUILD_ID" (
+    echo Frontend production build not found. Compiling optimized production build...
+    cd frontend
+    echo Compiling Tailwind CSS stylesheet...
+    cmd /c npx tailwindcss -i src/styles/globals.css -o src/styles/tailwind-compiled.css
+    echo Building Next.js production bundle...
+    cmd /c npm run build
+    if errorlevel 1 (
+        echo [ERROR] Frontend compilation failed!
+        cd ..
+        pause
+        exit /b
+    )
+    cd ..
+)
+goto RUN_APPS
+
+:BUILD_FRONTEND_DASHBOARD
+echo [4/5] Skipping Next.js compilation (Using custom dashboard)...
+goto RUN_APPS
+
+:: 6. Launch Services
+:RUN_APPS
 echo [5/5] Initializing Backend API Server (Port 5000)...
 start "Omnidesk OS Backend API" /D "backend" cmd /k npm run start
 
@@ -140,7 +165,7 @@ if "%choice%"=="1" (
     start "Omnidesk OS Frontend UI" /D "frontend" cmd /k npm run start
 ) else (
     echo [6/5] Initializing Custom Dashboard (Port 3000)...
-    start "Omnidesk OS Custom Dashboard" /D "omnidesk-dashboard" cmd /k set PORT=3000^& npm run start
+    start "Omnidesk OS Custom Dashboard" /D "omnidesk-dashboard" cmd /k "set PORT=3000 && npm run start"
 )
 
 :: 8. Open browser automatically once booted
